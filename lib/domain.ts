@@ -69,6 +69,7 @@ export const answerEvaluationSchema = z.object({
   coveredPointIds: z.array(z.string()),
   missedPointIds: z.array(z.string()),
   feedback: z.string(),
+  expectedAnswer: z.string().optional(),
   evidenceIds: z.array(z.string()),
   confidence: z.number().min(0).max(1),
   followUp: z.string().nullable(),
@@ -77,7 +78,6 @@ export const answerEvaluationSchema = z.object({
 export const topicResultSchema = z.object({
   question: interviewQuestionSchema,
   answer: z.string(),
-  followUpAnswer: z.string().optional(),
   evaluation: answerEvaluationSchema,
 });
 
@@ -105,7 +105,7 @@ export type SessionReport = z.infer<typeof sessionReportSchema>;
 export type ParsedFile = {
   path: string;
   content: string;
-  language: "JavaScript" | "TypeScript" | "Python" | "JSON" | "Other";
+  language: "JavaScript" | "TypeScript" | "Python" | "C++" | "JSON" | "Other";
   symbols: Array<{ name: string; line: number; kind: string }>;
   imports: Array<{ value: string; line: number }>;
 };

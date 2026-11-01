@@ -2,9 +2,33 @@ import type { AnswerEvaluation, EvidenceRef, InterviewQuestion, RepoFactSheet, S
 
 const normalize = (value: string) => value.toLowerCase().replace(/[^a-z0-9+#.]+/g, " ").replace(/\s+/g, " ").trim();
 
-function evidenceFor(facts: RepoFactSheet, kinds: EvidenceRef["kind"][], fallback?: string) {
-  const found = facts.evidence.find((item) => kinds.includes(item.kind) && (!fallback || item.id === fallback));
-  return found ?? facts.evidence[0];
+type EvidenceCriteria = { kinds: EvidenceRef["kind"][]; paths?: string[]; keywords?: string[]; fallback?: string };
+
+function evidenceFor(facts: RepoFactSheet, { kinds, paths = [], keywords = [], fallback }: EvidenceCriteria) {
+  const exactFallback = fallback ? facts.evidence.find((item) => item.id === fallback) : undefined;
+  if (exactFallback) return exactFallback;
+  const normalizedPaths = paths.map((path) => path.toLowerCase());
+  const normalizedKeywords = keywords.map((keyword) => keyword.toLowerCase()).filter(Boolean);
+  const found = facts.evidence
+    .filter((item) => kinds.includes(item.kind))
+    .map((item) => {
+      const path = item.path.toLowerCase();
+      const searchable = `${path} ${item.symbol ?? ""} ${item.excerpt}`.toLowerCase();
+      let score = (kinds.length - kinds.indexOf(item.kind)) * 15 + item.confidence;
+      if (normalizedPaths.includes(path)) score += 120;
+      if (normalizedPaths.some((candidate) => path.endsWith(`/${candidate}`))) score += 80;
+      for (const keyword of normalizedKeywords) {
+        if (path.includes(keyword)) score += 24;
+        else if (searchable.includes(keyword)) score += 8;
+      }
+      return { item, score };
+    })
+    .sort((a, b) => b.score - a.score || a.item.path.localeCompare(b.item.path))[0]?.item;
+  return found ?? facts.evidence[0] ?? {
+    id: "absence_repository-evidence", path: "repository", startLine: 1, endLine: 1,
+    symbol: "repository-evidence", excerpt: "No supported source evidence was detected in the analyzed files.",
+    kind: "absence", confidence: 0.5,
+  };
 }
 
 function point(id: string, label: string, aliases: string[], evidenceId: string, explanation: string, weight = 1) {
@@ -15,18 +39,19 @@ export function planQuestions(facts: RepoFactSheet): InterviewQuestion[] {
   const primaryLanguage = facts.languages[0]?.name ?? "the primary language";
   const framework = facts.signals.frameworks[0] ?? primaryLanguage;
   const entry = facts.entryPoints[0] ?? "the repository entry point";
-  const architectureEv = evidenceFor(facts, ["manifest", "symbol", "import"]);
-  const dataEv = evidenceFor(facts, ["route", "import", "symbol"]);
-  const designEv = evidenceFor(facts, ["manifest", "import"]);
-  const testsEv = facts.signals.tests.length ? evidenceFor(facts, ["test"]) : facts.evidence.find((e) => e.id === "absence_tests")!;
-  const securityEv = facts.signals.auth.length ? evidenceFor(facts, ["import", "config"]) : facts.evidence.find((e) => e.id === "absence_authentication")!;
-  const operationsEv = facts.signals.observability.length ? evidenceFor(facts, ["import", "config"]) : facts.evidence.find((e) => e.id === "absence_observability")!;
+  const architectureEv = evidenceFor(facts, { kinds: ["symbol", "import", "manifest"], paths: [entry], keywords: [entry, "main", "server", "app", "index"] });
+  const controlFlowEntries = facts.entryPoints.filter((path) => /(^|\/)(server|app|api|cli)\./i.test(path));
+  const dataEv = evidenceFor(facts, { kinds: ["route", "symbol", "import"], paths: controlFlowEntries, keywords: ["route", "server", "command", "controller", "handler", "service", "request", "response", "parse", "api"] });
+  const designEv = evidenceFor(facts, { kinds: ["manifest", "import"], paths: facts.manifests, keywords: [framework] });
+  const testsEv = facts.signals.tests.length ? evidenceFor(facts, { kinds: ["test", "symbol", "import"], paths: facts.signals.tests, keywords: ["test", "spec"] }) : evidenceFor(facts, { kinds: ["absence"], fallback: "absence_tests" });
+  const securityEv = facts.signals.auth.length ? evidenceFor(facts, { kinds: ["import", "config", "symbol"], keywords: [...facts.signals.auth, "auth", "jwt", "permission", "login"] }) : evidenceFor(facts, { kinds: ["absence"], fallback: "absence_authentication" });
+  const operationsEv = facts.signals.observability.length ? evidenceFor(facts, { kinds: ["config", "import", "symbol"], keywords: [...facts.signals.observability, "log", "metric", "trace", "monitor"] }) : evidenceFor(facts, { kinds: ["absence"], fallback: "absence_observability" });
   const datastore = facts.signals.dataStores[0] ?? "persistent state";
-  const dataStoreEv = facts.signals.dataStores.length ? evidenceFor(facts, ["manifest", "import"]) : facts.evidence.find((e) => e.id === "absence_data-store")!;
+  const dataStoreEv = facts.signals.dataStores.length ? evidenceFor(facts, { kinds: ["import", "symbol", "manifest"], keywords: [...facts.signals.dataStores, "database", "cache", "repository", "store"] }) : evidenceFor(facts, { kinds: ["absence"], fallback: "absence_data-store" });
 
   const make = (id: string, topic: InterviewQuestion["topic"], prompt: string, ev: EvidenceRef, rubric: InterviewQuestion["rubric"], explanation: string, difficulty: InterviewQuestion["difficulty"] = "applied"): InterviewQuestion => ({
     id, topic, prompt, difficulty, rubric, evidenceIds: [ev.id], explanation,
-    followUps: Object.fromEntries(rubric.map((r) => [r.id, `You did not yet cover ${r.label.toLowerCase()}. How does that affect your decision here?`])),
+    followUps: {},
   });
 
   return [
@@ -72,9 +97,9 @@ export function evaluateAnswer(question: InterviewQuestion, answer: string): Ans
   const total = question.rubric.reduce((sum, p) => sum + p.weight, 0);
   const score = covered.reduce((sum, p) => sum + p.weight, 0) / total;
   const verdict = score >= 0.72 ? "strong" : score >= 0.34 ? "partial" : "needs_work";
-  const target = [...missed].sort((a, b) => b.weight - a.weight)[0];
   const feedback = verdict === "strong" ? `Strong answer. You covered ${covered.map((p) => p.label.toLowerCase()).join(" and ")}.` : covered.length ? `You grounded part of the answer, but it still needs ${missed.map((p) => p.label.toLowerCase()).join(" and ")}.` : `The answer did not yet address the grounded rubric. Focus on ${missed.map((p) => p.label.toLowerCase()).join(" and ")}.`;
-  return { verdict, coveredPointIds: covered.map((p) => p.id), missedPointIds: missed.map((p) => p.id), feedback, evidenceIds: question.evidenceIds, confidence: answer.trim().length < 20 ? 0.48 : 0.74, followUp: target ? question.followUps[target.id] : null };
+  const expectedAnswer = `${question.explanation} A strong response should ${question.rubric.map((point) => point.explanation.replace(/\.$/, "").toLowerCase()).join(" and ")}.`;
+  return { verdict, coveredPointIds: covered.map((p) => p.id), missedPointIds: missed.map((p) => p.id), feedback, expectedAnswer, evidenceIds: question.evidenceIds, confidence: answer.trim().length < 20 ? 0.48 : 0.74, followUp: null };
 }
 
 export function buildReport(facts: RepoFactSheet, results: TopicResult[], startedAt: string): SessionReport {

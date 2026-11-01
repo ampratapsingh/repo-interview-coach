@@ -4,6 +4,12 @@ import { answerEvaluationSchema, interviewQuestionSchema } from "../../../../lib
 
 export const runtime = "edge";
 
+function backendKey(provider: z.infer<typeof requestSchema>["provider"]) {
+  if (provider === "openai") return process.env.OPENAI_API_KEY;
+  if (provider === "anthropic") return process.env.ANTHROPIC_API_KEY;
+  return process.env.GEMINI_API_KEY;
+}
+
 const requestSchema = z.object({
   provider: z.enum(["openai", "anthropic", "gemini"]),
   model: z.string().min(1).max(120),
@@ -19,7 +25,7 @@ function extractJson(value: string) {
 }
 
 function promptFor(input: z.infer<typeof requestSchema>) {
-  return `You are grading a repository interview answer. Return JSON only with: verdict (strong|partial|needs_work), coveredPointIds, missedPointIds, feedback, evidenceIds, confidence (0..1), followUp (string|null). Use only rubric IDs and evidence IDs supplied below. Never invent code facts.\n\nQuestion: ${input.question.prompt}\nRubric: ${JSON.stringify(input.question.rubric)}\nEvidence: ${JSON.stringify(input.evidence)}\nCandidate answer: ${input.answer}`;
+  return `You are grading a repository interview answer. Return JSON only with: verdict (strong|partial|needs_work), coveredPointIds, missedPointIds, feedback, expectedAnswer, evidenceIds, confidence (0..1), followUp (always null). expectedAnswer must be a concise example of what an interviewer expects: directly answer the question, cover every rubric point, distinguish observed code from recommendations, and cite only the supplied file paths or absence evidence. Use only rubric IDs and evidence IDs supplied below. Never invent code facts.\n\nQuestion: ${input.question.prompt}\nRubric: ${JSON.stringify(input.question.rubric)}\nEvidence: ${JSON.stringify(input.evidence)}\nCandidate answer: ${input.answer}`;
 }
 
 async function callProvider(input: z.infer<typeof requestSchema>, key: string) {
@@ -45,9 +51,10 @@ async function callProvider(input: z.infer<typeof requestSchema>, key: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const key = request.headers.get("x-provider-key");
+    const body = requestSchema.parse(await request.json());
+    const key = request.headers.get("x-provider-key") || backendKey(body.provider);
     if (!key || key.length > 500) return NextResponse.json({ error: "A provider key is required." }, { status: 401 });
-    const input = requestSchema.parse(await request.json());
+    const input = body;
     const evaluation = answerEvaluationSchema.parse(await callProvider(input, key));
     const rubricIds = new Set(input.question.rubric.map((point) => point.id));
     const evidenceIds = new Set(input.evidence.map((item) => item.id));

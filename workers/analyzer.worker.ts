@@ -15,6 +15,7 @@ function languageFor(path: string): ParsedFile["language"] | null {
   if (["js", "jsx", "mjs", "cjs"].includes(ext ?? "")) return "JavaScript";
   if (["ts", "tsx", "mts", "cts"].includes(ext ?? "")) return "TypeScript";
   if (ext === "py") return "Python";
+  if (["cpp", "cc", "cxx", "h", "hpp", "hh"].includes(ext ?? "")) return "C++";
   if (["json", "toml", "txt", "yml", "yaml", "md"].includes(ext ?? "")) return ext === "json" ? "JSON" : "Other";
   return null;
 }
@@ -43,6 +44,18 @@ async function parseSource(file: ParsedFile, parsers: Record<string, Parser>) {
   const parser = ext === "py" ? parsers.python : ext === "tsx" || ext === "jsx" ? parsers.tsx : file.language === "TypeScript" ? parsers.typescript : parsers.javascript;
   const tree = parser.parse(file.content);
   if (tree) { walk(tree.rootNode as unknown as Node, file); tree.delete(); }
+}
+
+function parseCpp(file: ParsedFile) {
+  const lines = file.content.split("\n");
+  lines.forEach((line, index) => {
+    const include = line.match(/^\s*#\s*include\s*[<"]([^>"]+)[>"]/);
+    if (include) file.imports.push({ value: include[1], line: index + 1 });
+    const className = line.match(/^\s*(?:class|struct)\s+([A-Za-z_]\w*)/);
+    if (className) file.symbols.push({ name: className[1], line: index + 1, kind: "class_definition" });
+    const functionName = line.match(/^\s*(?:[\w:<>,~*&]+\s+)+([A-Za-z_]\w*(?:::\w+)*)\s*\([^;]*\)\s*(?:const\s*)?\{/);
+    if (functionName && !/^(if|for|while|switch|catch)$/.test(functionName[1])) file.symbols.push({ name: functionName[1], line: index + 1, kind: "function_definition" });
+  });
 }
 
 async function createParsers() {
@@ -79,7 +92,10 @@ self.onmessage = async (event: MessageEvent<RequestMessage>) => {
       files.push({ path, content: decoder.decode(bytes), language, symbols: [], imports: [] });
     }
     const parsers = await createParsers();
-    for (const file of files) if (["JavaScript", "TypeScript", "Python"].includes(file.language)) await parseSource(file, parsers);
+    for (const file of files) {
+      if (["JavaScript", "TypeScript", "Python"].includes(file.language)) await parseSource(file, parsers);
+      else if (file.language === "C++") parseCpp(file);
+    }
     Object.values(parsers).forEach((parser) => parser.delete());
     const facts = analyzeFiles(event.data.identity, files, limitations);
     self.postMessage({ type: "complete", facts });

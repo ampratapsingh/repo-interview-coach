@@ -27,10 +27,11 @@ async function transact(store: "facts" | "reports", mode: IDBTransactionMode, ac
   });
 }
 
-export const factKey = (facts: Pick<RepoFactSheet, "identity">) => `${facts.identity.owner}/${facts.identity.repository}@${facts.identity.headSha}`;
+const ANALYZER_VERSION = 3;
+export const factKey = (facts: Pick<RepoFactSheet, "identity">) => `v${ANALYZER_VERSION}:${facts.identity.owner}/${facts.identity.repository}@${facts.identity.headSha}`;
 export async function saveFactSheet(facts: RepoFactSheet) { await transact("facts", "readwrite", (store) => store.put(facts, factKey(facts))); }
 export async function getFactSheet(key: string) { return transact("facts", "readonly", (store) => store.get(key)) as Promise<RepoFactSheet | undefined>; }
 export async function saveReport(report: SessionReport) { await transact("reports", "readwrite", (store) => store.put(report)); }
 export async function listReports() { return transact("reports", "readonly", (store) => store.getAll()) as Promise<SessionReport[]>; }
-export async function clearLocalData() { const db = await openDb(); for (const name of ["facts", "reports"]) db.transaction(name, "readwrite").objectStore(name).clear(); db.close(); localStorage.removeItem("ric-provider-settings"); }
+export async function clearLocalData() { const db = await openDb(); for (const name of ["facts", "reports"]) db.transaction(name, "readwrite").objectStore(name).clear(); db.close(); localStorage.removeItem("ric-provider-settings"); localStorage.removeItem("ric-repo-chats"); }
 
