@@ -4,7 +4,7 @@ import { repoIdentitySchema } from "../../../../lib/domain";
 
 export const runtime = "edge";
 
-const headers = { Accept: "application/vnd.github+json", "User-Agent": "Repo-Interview-Coach", "X-GitHub-Api-Version": "2022-11-28" };
+const headers = { Accept: "application/vnd.github+json", "User-Agent": "Repo-Inspector", "X-GitHub-Api-Version": "2022-11-28" };
 
 export async function POST(request: NextRequest) {
   try {

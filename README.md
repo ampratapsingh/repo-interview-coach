@@ -1,4 +1,4 @@
-# Repo Interview Coach
+# Repo Inspector
 
 A privacy-first, code-grounded project interview coach. Paste a public GitHub repository and practice eight adaptive deep-dive topics with feedback that points back to real files.
 

@@ -1,14 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { answerEvaluationSchema, interviewQuestionSchema } from "../../../../lib/domain";
+import { consumeAiRateLimit } from "../../../../lib/rate-limit";
+import { getChatGPTUser } from "../../../chatgpt-auth";
 
 export const runtime = "edge";
-
-function backendKey(provider: z.infer<typeof requestSchema>["provider"]) {
-  if (provider === "openai") return process.env.OPENAI_API_KEY;
-  if (provider === "anthropic") return process.env.ANTHROPIC_API_KEY;
-  return process.env.GEMINI_API_KEY;
-}
 
 const requestSchema = z.object({
   provider: z.enum(["openai", "anthropic", "gemini"]),
@@ -26,6 +22,14 @@ function extractJson(value: string) {
 
 function promptFor(input: z.infer<typeof requestSchema>) {
   return `You are grading a repository interview answer. Return JSON only with: verdict (strong|partial|needs_work), coveredPointIds, missedPointIds, feedback, expectedAnswer, evidenceIds, confidence (0..1), followUp (always null). expectedAnswer must be a concise example of what an interviewer expects: directly answer the question, cover every rubric point, distinguish observed code from recommendations, and cite only the supplied file paths or absence evidence. Use only rubric IDs and evidence IDs supplied below. Never invent code facts.\n\nQuestion: ${input.question.prompt}\nRubric: ${JSON.stringify(input.question.rubric)}\nEvidence: ${JSON.stringify(input.evidence)}\nCandidate answer: ${input.answer}`;
+}
+
+async function callQwen(prompt: string, key: string) {
+  const baseUrl = (process.env.QWEN_BASE_URL || "https://api.iteracompute.com/v1").replace(/\/$/, "");
+  const response = await fetch(`${baseUrl}/chat/completions`, { method: "POST", headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" }, body: JSON.stringify({ model: process.env.QWEN_MODEL || "qwen/qwen3.8-27b", temperature: 0.1, response_format: { type: "json_object" }, messages: [{ role: "system", content: "Return grounded JSON only." }, { role: "user", content: prompt }] }) });
+  if (!response.ok) throw new Error(`Qwen returned ${response.status}.`);
+  const data = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+  return extractJson(data.choices?.[0]?.message?.content ?? "");
 }
 
 async function callProvider(input: z.infer<typeof requestSchema>, key: string) {
@@ -51,11 +55,16 @@ async function callProvider(input: z.infer<typeof requestSchema>, key: string) {
 
 export async function POST(request: NextRequest) {
   try {
+    const user = await getChatGPTUser();
+    if (!user) return NextResponse.json({ error: "Sign in to use AI evaluation." }, { status: 401 });
+    const limit = consumeAiRateLimit(user.userId);
+    if (!limit.allowed) return NextResponse.json({ error: "AI request limit reached. Please try again later." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
     const body = requestSchema.parse(await request.json());
-    const key = request.headers.get("x-provider-key") || backendKey(body.provider);
+    const userKey = request.headers.get("x-provider-key");
+    const key = userKey || process.env.QWEN_API_KEY;
     if (!key || key.length > 500) return NextResponse.json({ error: "A provider key is required." }, { status: 401 });
     const input = body;
-    const evaluation = answerEvaluationSchema.parse(await callProvider(input, key));
+    const evaluation = answerEvaluationSchema.parse(await (userKey ? callProvider(input, key) : callQwen(promptFor(input), key)));
     const rubricIds = new Set(input.question.rubric.map((point) => point.id));
     const evidenceIds = new Set(input.evidence.map((item) => item.id));
     if (![...evaluation.coveredPointIds, ...evaluation.missedPointIds].every((id) => rubricIds.has(id))) throw new Error("Provider returned an unknown rubric reference.");

@@ -15,7 +15,7 @@ export const evidenceRefSchema = z.object({
   endLine: z.number().int().positive(),
   symbol: z.string().optional(),
   excerpt: z.string(),
-  kind: z.enum(["manifest", "symbol", "import", "route", "config", "test", "absence"]),
+  kind: z.enum(["manifest", "symbol", "import", "route", "config", "test", "documentation", "absence"]),
   confidence: z.number().min(0).max(1),
 });
 

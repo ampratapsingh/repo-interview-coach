@@ -145,7 +145,26 @@ body { margin: 0; background: var(--background); color: var(--foreground); font-
 button, a, input, textarea, select { transition: border-color .2s ease, background-color .2s ease, color .2s ease, opacity .2s ease, transform .2s ease; }
 button, select { cursor: pointer; }
 button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #9ac5aa; outline-offset: 2px; }
-.hero-grid { background-color: #f7faf8; background-image: linear-gradient(rgba(39,86,63,.05) 1px, transparent 1px), linear-gradient(90deg, rgba(39,86,63,.05) 1px, transparent 1px); background-size: 36px 36px; }
+.hero-grid {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  background-color: #f7f5ef;
+  background-image:
+    linear-gradient(to bottom, rgba(247,245,239,.02) 48%, rgba(247,245,239,.28) 65%, rgba(247,245,239,0) 100%),
+    url("/assets/mountain-ridge.png"),
+    radial-gradient(circle at 18% 12%, #fff 0, #f7f5ef 48%, #edf1eb 100%);
+  background-position: center, bottom center, center;
+  background-repeat: no-repeat;
+  background-size: cover, min(1500px, 112vw) auto, cover;
+}
+
+@media (max-width: 1023px) {
+  .hero-grid {
+    background-position: center, bottom right 30%, center;
+    background-size: cover, auto 34%, cover;
+  }
+}
 .eyebrow { display: inline-flex; align-items: center; gap: .45rem; border: 1px solid #c8d9cf; border-radius: 999px; background: rgba(255,255,255,.75); padding: .45rem .75rem; color: #2d6b50; font-size: .7rem; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; }
 .section-label { color: #75867d; font-size: .68rem; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
 .primary-button, .secondary-button, .text-button { display: inline-flex; align-items: center; gap: .5rem; border-radius: .8rem; font-size: .84rem; font-weight: 750; }
@@ -184,5 +203,6 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .verdict-pill.needs_work { background: #f8e3d8; color: #8c4829; }
 .field-label { display: grid; gap: .45rem; margin-bottom: 1rem; color: #53665c; font-size: .75rem; font-weight: 750; }
 .field-input { width: 100%; height: 2.8rem; border: 1px solid #ccd8d1; border-radius: .75rem; background: white; padding: 0 .8rem; color: #17211d; font-size: .85rem; outline: none; }
+.api-key-input { padding-left: 2.65rem; }
 .field-input:focus { border-color: #5f9275; }
 @media (max-width: 640px) { .panel { padding: 1.15rem; } .interview-card { padding: 1.3rem; } }

@@ -17,6 +17,29 @@ function excerptAt(content: string, line: number) {
   return content.split("\n").slice(Math.max(0, line - 1), line + 2).join("\n").trim().slice(0, 360);
 }
 
+function symbolExcerpt(content: string, line: number) {
+  const lines = content.split("\n");
+  const start = Math.max(0, line - 1);
+  const firstIndent = lines[start]?.match(/^\s*/)?.[0].length ?? 0;
+  let braces = 0;
+  let sawBrace = false;
+  let end = Math.min(lines.length, start + 40);
+  for (let index = start; index < Math.min(lines.length, start + 40); index++) {
+    const current = lines[index];
+    const opens = (current.match(/[\[{:]/g) ?? []).length;
+    const closes = (current.match(/[}\]]/g) ?? []).length;
+    if (opens) sawBrace = true;
+    braces += opens - closes;
+    const indent = current.match(/^\s*/)?.[0].length ?? 0;
+    if (index > start + 2 && ((sawBrace && braces <= 0) || (!sawBrace && current.trim() && indent <= firstIndent && /^(?:async\s+)?(?:def|class|function|export\s+function)\b/.test(current.trim())))) {
+      end = sawBrace ? index + 1 : index;
+      break;
+    }
+  }
+  const excerpt = lines.slice(start, end).join("\n").trim().slice(0, 1_000);
+  return { excerpt, endLine: Math.max(line, Math.min(lines.length, start + excerpt.split("\n").length)) };
+}
+
 export function analyzeFiles(identity: RepoIdentity, files: ParsedFile[], limitations: string[]): RepoFactSheet {
   const evidence: EvidenceRef[] = [];
   const languageMap = new Map<string, { files: number; lines: number }>();
@@ -28,9 +51,9 @@ export function analyzeFiles(identity: RepoIdentity, files: ParsedFile[], limita
   const modules = new Set<string>();
   const signals = { frameworks: new Set<string>(), dataStores: new Set<string>(), auth: new Set<string>(), tests: new Set<string>(), ci: new Set<string>(), deployment: new Set<string>(), observability: new Set<string>() };
 
-  const addEvidence = (file: ParsedFile, line: number, kind: EvidenceRef["kind"], symbol: string | undefined, excerpt?: string) => {
+  const addEvidence = (file: ParsedFile, line: number, kind: EvidenceRef["kind"], symbol: string | undefined, excerpt?: string, endLine = line + 2) => {
     const id = `ev_${hash(`${file.path}:${line}:${kind}:${symbol ?? ""}`)}`;
-    if (!evidence.some((item) => item.id === id)) evidence.push({ id, path: file.path, startLine: Math.max(1, line), endLine: Math.max(1, line + 2), symbol, excerpt: excerpt ?? excerptAt(file.content, line), kind, confidence: 0.92 });
+    if (!evidence.some((item) => item.id === id)) evidence.push({ id, path: file.path, startLine: Math.max(1, line), endLine: Math.max(1, endLine), symbol, excerpt: excerpt ?? excerptAt(file.content, line), kind, confidence: 0.92 });
     return id;
   };
 
@@ -58,8 +81,9 @@ export function analyzeFiles(identity: RepoIdentity, files: ParsedFile[], limita
         file.content.split("\n").map((line) => line.trim().split(/[=<>~!\[]/)[0]).filter(Boolean).forEach((dep) => dependencies.add(dep));
       }
     }
+    if (/(^|\/)(readme|architecture|design)(\.[^/]+)?$/.test(lower)) addEvidence(file, 1, "documentation", "repository documentation", file.content.slice(0, 1_000), Math.min(file.content.split("\n").length, 40));
     for (const item of file.imports) { imports.add(item.value); addEvidence(file, item.line, "import", item.value); }
-    for (const symbol of file.symbols.slice(0, 20)) addEvidence(file, symbol.line, "symbol", symbol.name);
+    for (const symbol of file.symbols.slice(0, 20)) { const chunk = symbolExcerpt(file.content, symbol.line); addEvidence(file, symbol.line, "symbol", symbol.name, chunk.excerpt, chunk.endLine); }
     const text = file.content;
     const routeRegex = /(?:app|router)\.(get|post|put|patch|delete)\s*\(\s*["'`]([^"'`]+)/g;
     for (const match of text.matchAll(routeRegex)) { routes.add(`${match[1].toUpperCase()} ${match[2]}`); addEvidence(file, text.slice(0, match.index).split("\n").length, "route", match[2]); }
@@ -76,6 +100,13 @@ export function analyzeFiles(identity: RepoIdentity, files: ParsedFile[], limita
   matchDeps(["sentry", "datadog", "opentelemetry", "winston", "pino"], signals.observability);
   if (files.some((file) => /(^|\/)(database|storage|store|cache)\.(cpp|cc|cxx|hpp?|hh)$/.test(file.path.toLowerCase()))) signals.dataStores.add("repository storage engine");
 
+  evidence.push({
+    id: "repository_architecture_overview", path: "repository", startLine: 1, endLine: 1,
+    symbol: "architecture overview",
+    excerpt: `Entry points: ${[...entryPoints].join(", ") || "none detected"}. Top-level modules: ${[...modules].join(", ") || "single/root module"}. Framework signals: ${[...signals.frameworks].join(", ") || "none detected"}. Routes: ${[...routes].slice(0, 12).join(", ") || "none detected"}.`,
+    kind: "documentation", confidence: 0.84,
+  });
+
   const first = files[0] ?? { path: "repository", content: "No supported source files found." } as ParsedFile;
   const absence = (label: string, present: boolean) => {
     if (present) return;
@@ -88,8 +119,10 @@ export function analyzeFiles(identity: RepoIdentity, files: ParsedFile[], limita
   // otherwise push it beyond the fact-sheet cap. Questions rely on these refs
   // when a signal is missing, so reserve room for every absence observation.
   const absenceEvidence = evidence.filter((item) => item.kind === "absence");
+  const structuralEvidence = evidence.filter((item) => item.id === "repository_architecture_overview");
   const retainedEvidence = [
-    ...evidence.filter((item) => item.kind !== "absence").slice(0, 600 - absenceEvidence.length),
+    ...evidence.filter((item) => item.kind !== "absence" && item.id !== "repository_architecture_overview").slice(0, 600 - absenceEvidence.length - structuralEvidence.length),
+    ...structuralEvidence,
     ...absenceEvidence,
   ];
 

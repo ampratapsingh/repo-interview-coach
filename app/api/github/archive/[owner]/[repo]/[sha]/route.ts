@@ -10,7 +10,7 @@ export async function GET(_request: NextRequest, context: { params: Promise<{ ow
     const { owner, repo, sha } = await context.params;
     assertGitHubSegment(owner, "owner"); assertGitHubSegment(repo, "repository");
     if (!SHA.test(sha)) throw new Error("Invalid commit SHA.");
-    const upstream = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/zipball/${sha}`, { redirect: "follow", headers: { Accept: "application/vnd.github+json", "User-Agent": "Repo-Interview-Coach", "X-GitHub-Api-Version": "2022-11-28" } });
+    const upstream = await fetch(`https://api.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/zipball/${sha}`, { redirect: "follow", headers: { Accept: "application/vnd.github+json", "User-Agent": "Repo-Inspector", "X-GitHub-Api-Version": "2022-11-28" } });
     if (upstream.status === 403 && upstream.headers.get("x-ratelimit-remaining") === "0") return NextResponse.json({ error: "GitHub rate limit reached. Try again later." }, { status: 429 });
     if (!upstream.ok || !upstream.body) return NextResponse.json({ error: `Archive download failed (${upstream.status}).` }, { status: upstream.status || 502 });
     const declared = Number(upstream.headers.get("content-length") ?? 0);

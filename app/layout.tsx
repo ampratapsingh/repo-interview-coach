@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Repo Interview Coach — Defend your code",
-  description: "A privacy-first, code-grounded interview coach for public GitHub repositories.",
+  title: "Repo Inspector — Understand and defend your code",
+  description: "A privacy-first, code-grounded repository inspector for public GitHub projects.",
   icons: {
     icon: "/favicon.svg",
     shortcut: "/favicon.svg",

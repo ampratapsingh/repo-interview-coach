@@ -27,7 +27,7 @@ async function transact(store: "facts" | "reports", mode: IDBTransactionMode, ac
   });
 }
 
-const ANALYZER_VERSION = 3;
+const ANALYZER_VERSION = 4;
 export const factKey = (facts: Pick<RepoFactSheet, "identity">) => `v${ANALYZER_VERSION}:${facts.identity.owner}/${facts.identity.repository}@${facts.identity.headSha}`;
 export async function saveFactSheet(facts: RepoFactSheet) { await transact("facts", "readwrite", (store) => store.put(facts, factKey(facts))); }
 export async function getFactSheet(key: string) { return transact("facts", "readonly", (store) => store.get(key)) as Promise<RepoFactSheet | undefined>; }

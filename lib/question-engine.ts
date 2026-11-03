@@ -39,7 +39,7 @@ export function planQuestions(facts: RepoFactSheet): InterviewQuestion[] {
   const primaryLanguage = facts.languages[0]?.name ?? "the primary language";
   const framework = facts.signals.frameworks[0] ?? primaryLanguage;
   const entry = facts.entryPoints[0] ?? "the repository entry point";
-  const architectureEv = evidenceFor(facts, { kinds: ["symbol", "import", "manifest"], paths: [entry], keywords: [entry, "main", "server", "app", "index"] });
+  const architectureEv = evidenceFor(facts, { kinds: ["symbol", "import", "manifest", "documentation"], paths: [entry], keywords: [entry, "main", "server", "app", "index", "architecture"] });
   const controlFlowEntries = facts.entryPoints.filter((path) => /(^|\/)(server|app|api|cli)\./i.test(path));
   const dataEv = evidenceFor(facts, { kinds: ["route", "symbol", "import"], paths: controlFlowEntries, keywords: ["route", "server", "command", "controller", "handler", "service", "request", "response", "parse", "api"] });
   const designEv = evidenceFor(facts, { kinds: ["manifest", "import"], paths: facts.manifests, keywords: [framework] });
