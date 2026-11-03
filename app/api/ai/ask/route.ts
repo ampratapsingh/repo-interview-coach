@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
-import { getChatGPTUser } from "../../../chatgpt-auth";
 import { consumeAiRateLimit } from "../../../../lib/rate-limit";
 
 export const runtime = "edge";
@@ -102,9 +101,8 @@ async function askProvider(input: z.infer<typeof requestSchema>, key: string) {
 
 export async function POST(request: NextRequest) {
   try {
-    const user = await getChatGPTUser();
-    if (!user) return NextResponse.json({ error: "Sign in to use repository AI." }, { status: 401 });
-    const limit = consumeAiRateLimit(user.userId);
+    const clientId = request.headers.get("cf-connecting-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim() ?? "unknown";
+    const limit = consumeAiRateLimit(`anonymous:${clientId}`);
     if (!limit.allowed) return NextResponse.json({ error: "AI request limit reached. Please try again later." }, { status: 429, headers: { "Retry-After": String(limit.retryAfterSeconds) } });
     const input = requestSchema.parse(await request.json());
     const userKey = request.headers.get("x-provider-key");

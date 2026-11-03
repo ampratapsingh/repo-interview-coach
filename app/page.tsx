@@ -1,7 +1,5 @@
 import { CoachApp } from "./coach-app";
-import { requireChatGPTUser } from "./chatgpt-auth";
 
-export default async function Home() {
-  await requireChatGPTUser("/");
+export default function Home() {
   return <CoachApp />;
 }
